@@ -1,0 +1,164 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <title>MoodSense</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+      body{ font-family: Inter, Arial; background:#f6f6fb; margin:0; }
+      header{ background:white; padding:12px 24px; box-shadow:0 2px 6px rgba(0,0,0,0.06)}
+      .container{ max-width:980px; margin:24px auto; padding:0 16px;}
+      .card{ background:white; padding:18px; border-radius:12px; box-shadow:0 6px 30px rgba(0,0,0,0.06); margin-bottom:18px;}
+      .chatbox{ height:360px; border:1px solid #eee; padding:12px; overflow:auto; border-radius:8px; background:#fff; }
+      .controls{ margin-top:12px; display:flex; gap:8px; align-items:center;}
+      .btn{ padding:8px 12px; border-radius:8px; background:#2d68ff; color:white; border:none; cursor:pointer; }
+      .btn.secondary{ background:#eee; color:#333;}
+    </style>
+  </head>
+  <body>
+    <header>
+      <div style="max-width:980px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;">
+        <h2 style="margin:0">MoodSense</h2>
+        <div id="g_id_onload" data-client_id="" data-login_uri="" data-auto_prompt="false"></div>
+        <div id="g_button"></div>
+        <div id="user_info" style="display:inline-block;margin-left:12px"></div>
+      </div>
+    </header>
+    <div class="container">
+      <div class="card" id="home">
+        <h3>Welcome to MoodSense</h3>
+        <p>Brief intro about us: MoodSense helps you track daily moods, get tailored suggestions, and visualize trends.</p>
+        <div style="display:flex; gap:8px;">
+          <button class="btn" onclick="location.hash='#/chat'">Open Chatbot</button>
+          <button class="btn secondary" onclick="location.hash='#/dashboard'">Dashboard</button>
+          <button class="btn secondary" onclick="location.hash='#/trends'">Trends</button>
+        </div>
+      </div>
+
+      <div class="card" id="chat" style="display:none">
+        <h3>Chatbot</h3>
+        <div class="chatbox" id="chatbox"></div>
+        <div class="controls">
+          <textarea id="message" placeholder="Type how you feel..." rows="2" style="flex:1"></textarea>
+          <input type="file" id="audiofile" accept="audio/*"/>
+          <button class="btn" onclick="sendMessage()">Send</button>
+        </div>
+        <div id="suggestion" style="margin-top:12px"></div>
+      </div>
+
+      <div class="card" id="dashboard" style="display:none">
+        <h3>Your Mood History</h3>
+        <div id="history"></div>
+      </div>
+
+      <div class="card" id="trends" style="display:none">
+        <h3>Global Trends</h3>
+        <canvas id="trendsChart" width="400" height="200"></canvas>
+      </div>
+
+      <div class="card" id="contact" style="display:none">
+        <h3>Contact Us</h3>
+        <form id="contactForm" onsubmit="submitContact(event)">
+          <input id="cname" placeholder="Your name" required/><br/><br/>
+          <input id="cemail" placeholder="Your email" required/><br/><br/>
+          <textarea id="cmsg" placeholder="Message" rows="4"></textarea><br/><br/>
+          <button class="btn">Send</button>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      // Simple client-side SPA router (hash-based)
+      function route(){
+        const hash = location.hash || '#/';
+        document.querySelectorAll('#home,#chat,#dashboard,#trends,#contact').forEach(el=>el.style.display='none');
+        if(hash.startsWith('#/chat')) document.getElementById('chat').style.display='block';
+        else if(hash.startsWith('#/dashboard')) { document.getElementById('dashboard').style.display='block'; loadHistory(); }
+        else if(hash.startsWith('#/trends')) { document.getElementById('trends').style.display='block'; loadTrends(); }
+        else if(hash.startsWith('#/contact')) document.getElementById('contact').style.display='block';
+        else document.getElementById('home').style.display='block';
+      }
+      window.addEventListener('hashchange', route);
+      route();
+
+      // Google Identity: render button and handle token
+      const GOOGLE_CLIENT_ID = (function(){
+        // try to read env var placeholder (replace manually)
+        return '';
+      })();
+
+      function initializeGoogle(){
+        if(typeof google === 'undefined') return;
+        google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: handleCredentialResponse,
+        });
+        google.accounts.id.renderButton(document.getElementById('g_button'), { theme: 'outline', size: 'small' });
+        google.accounts.id.prompt();
+      }
+      function handleCredentialResponse(response){
+        // response.credential is the id_token
+        console.log('ID token', response.credential);
+        // send to backend to exchange for JWT
+        fetch('/api/auth/google', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id_token: response.credential})})
+          .then(r=>r.json()).then(handleAuthResult).catch(e=>console.error(e));
+      }
+      function handleAuthResult(data){
+        if(data.access_token){
+          localStorage.setItem('moodsense_token', data.access_token);
+          document.getElementById('user_info').innerHTML = '<img src="'+data.user.picture+'" width=32 style="border-radius:50%;vertical-align:middle"> '+data.user.name;
+        } else {
+          console.error('Auth failed', data);
+        }
+      }
+      window.onload = function(){
+        initializeGoogle();
+      }
+
+      async function sendMessage(){
+        const token = localStorage.getItem('moodsense_token');
+        if(!token){ alert('Please sign in with Google first'); return; }
+        const text = document.getElementById('message').value;
+        const res = await fetch('/api/chat/message', {method:'POST', headers:{'Content-Type':'application/json', 'Authorization':'Bearer '+token}, body: JSON.stringify({text})});
+        const j = await res.json();
+        // append to chatbox
+        const chatbox = document.getElementById('chatbox');
+        chatbox.innerHTML += '<div><b>You:</b> '+(text||'[audio]')+'</div>';
+        chatbox.innerHTML += '<div><b>MoodSense:</b> Mood='+j.mood.label+' (score='+j.mood.score+')</div>';
+        document.getElementById('suggestion').innerText = 'Suggestion: '+j.suggestion;
+        document.getElementById('message').value='';
+      }
+
+      async function loadHistory(){
+        const token = localStorage.getItem('moodsense_token');
+        if(!token){ document.getElementById('history').innerText='Sign in to view history'; return; }
+        const res = await fetch('/api/mood/user', {headers:{'Authorization':'Bearer '+token}});
+        const j = await res.json();
+        const el = document.getElementById('history');
+        el.innerHTML = '<ul>'+ j.map(it=>'<li>['+new Date(it.created_at).toLocaleString()+'] '+it.label+' ('+it.score+')</li>').join('') +'</ul>';
+      }
+
+      async function loadTrends(){
+        const res = await fetch('/api/mood/trends');
+        const j = await res.json();
+        // render simple bar chart using Chart.js if available
+        if(typeof Chart === 'undefined'){
+          const script = document.createElement('script'); script.src='https://cdn.jsdelivr.net/npm/chart.js'; document.head.appendChild(script);
+          script.onload = ()=>drawChart(j);
+        } else drawChart(j);
+      }
+      function drawChart(data){
+        const ctx = document.getElementById('trendsChart').getContext('2d');
+        const labels = Object.keys(data);
+        const values = Object.values(data);
+        new Chart(ctx, { type:'bar', data:{ labels, datasets:[{ label:'Count', data:values }] } });
+      }
+
+      function submitContact(e){
+        e.preventDefault();
+        alert('Contact form submitted (not wired).');
+      }
+    </script>
+  </body>
+</html>
