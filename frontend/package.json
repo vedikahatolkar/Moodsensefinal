@@ -1,16 +1,22 @@
 {
   "name": "moodsense-frontend",
-  "version": "0.1.0",
   "private": true,
-  "dependencies": {
-    "chart.js": "^4.3.0",
-    "react": "^18.2.0",
-    "react-chartjs-2": "^5.2.0",
-    "react-dom": "^18.2.0",
-    "react-router-dom": "^6.14.1"
-  },
+  "version": "0.0.0",
+  "type": "module",
   "scripts": {
-    "start": "serve -s build -l 3000",
-    "build": "echo 'Static build placeholder' && mkdir -p build && cp index.html build/index.html"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "three": "^0.165.0",
+    "@react-three/fiber": "^10.7.0",
+    "@react-three/drei": "^10.6.4"
+  },
+  "devDependencies": {
+    "vite": "^7.2.2",
+    "@vitejs/plugin-react": "^5.1.0"
   }
 }
